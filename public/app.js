@@ -64,7 +64,11 @@ const api = {
       method: 'POST',
       body: formData
     });
-    return res.json();
+    const data = await res.json();
+    if (!res.ok) {
+      throw data;
+    }
+    return data;
   },
   async updateInspection(id, data) {
     const res = await fetch(`${API_BASE}/api/inspections/${id}`, {
@@ -1342,8 +1346,20 @@ const InspectionDiagnosis = {
       symptoms: '',
       plantId: '',
       handler: '',
-      photo: null
+      photo: null,
+      photoPreview: ''
     });
+
+    const photoError = ref('');
+
+    const validatePhoto = () => {
+      if (!formData.photo) {
+        photoError.value = '请上传巡检照片';
+        return false;
+      }
+      photoError.value = '';
+      return true;
+    };
 
     const rules = {
       symptoms: [{ required: true, message: '请输入症状描述', trigger: 'blur' }],
@@ -1432,6 +1448,7 @@ const InspectionDiagnosis = {
 
     const handleSubmit = async (formRef) => {
       if (!formRef) return;
+      if (!validatePhoto()) return;
       await formRef.validate(async (valid) => {
         if (valid) {
           try {
@@ -1446,7 +1463,7 @@ const InspectionDiagnosis = {
             resetForm();
             loadOrders();
           } catch (e) {
-            ElMessage.error('创建工单失败');
+            ElMessage.error(e?.error || '创建工单失败');
           }
         }
       });
@@ -1457,6 +1474,8 @@ const InspectionDiagnosis = {
       formData.plantId = '';
       formData.handler = '';
       formData.photo = null;
+      formData.photoPreview = '';
+      photoError.value = '';
       matchedPests.value = [];
     };
 
@@ -1498,6 +1517,8 @@ const InspectionDiagnosis = {
 
     const handleFileChange = (uploadFileObj) => {
       formData.photo = uploadFileObj.raw;
+      formData.photoPreview = URL.createObjectURL(uploadFileObj.raw);
+      photoError.value = '';
     };
 
     const getRiskColor = (score) => {
@@ -1528,9 +1549,9 @@ const InspectionDiagnosis = {
     return {
       orders, plants, loading, createVisible, detailVisible, trackVisible,
       currentOrder, filterStatus, formData, rules, matchedPests, pestsLoading,
-      previewRisk, commonSymptoms, severityMap, statusMap,
+      previewRisk, commonSymptoms, severityMap, statusMap, photoError,
       openCreateDialog, openDetail, openTrack,
-      handleSubmit, handleAccept, handleVerify, handleFileChange,
+      handleSubmit, handleAccept, handleVerify, handleFileChange, validatePhoto,
       quickFillSymptom, getRiskColor, formatDate, loadOrders
     };
   },
@@ -1623,10 +1644,26 @@ const InspectionDiagnosis = {
               @click="quickFillSymptom(s)"
             >{{ s }}</el-tag>
           </div>
-          <el-form-item label="照片">
-            <el-upload :auto-upload="false" :show-file-list="false" accept="image/*" @change="handleFileChange">
-              <el-button type="default">选择照片</el-button>
-            </el-upload>
+          <el-form-item label="照片" required>
+            <div class="photo-upload-area">
+              <el-upload :auto-upload="false" :show-file-list="false" accept="image/*" @change="handleFileChange">
+                <div class="photo-upload-trigger" :class="{ 'photo-upload-error': photoError }">
+                  <div v-if="!formData.photoPreview" class="photo-upload-placeholder">
+                    <el-icon style="font-size: 32px; color: #999;"><Plus /></el-icon>
+                    <div style="color: #666; font-size: 13px; margin-top: 8px;">上传巡检照片</div>
+                    <div style="color: #999; font-size: 12px;">点击选择图片</div>
+                  </div>
+                  <div v-else class="photo-upload-preview">
+                    <img :src="formData.photoPreview" alt="预览" />
+                    <div class="photo-upload-preview-mask">
+                      <el-icon style="font-size: 24px; color: white;"><RefreshRight /></el-icon>
+                      <span style="color: white; font-size: 12px;">更换照片</span>
+                    </div>
+                  </div>
+                </div>
+              </el-upload>
+              <div v-if="photoError" class="photo-error-tip">{{ photoError }}</div>
+            </div>
           </el-form-item>
           <el-form-item label="处理人" prop="handler">
             <el-input v-model="formData.handler" placeholder="指定处理人" />
@@ -1692,8 +1729,9 @@ const InspectionDiagnosis = {
             <el-descriptions-item v-if="currentOrder.matchedKeywords?.length" label="命中关键词" :span="2">
               <el-tag v-for="kw in currentOrder.matchedKeywords" :key="kw" size="small" type="warning" style="margin: 2px;">{{ kw }}</el-tag>
             </el-descriptions-item>
-            <el-descriptions-item v-if="currentOrder.photo" label="照片" :span="2">
-              <img :src="currentOrder.photo" style="max-width: 300px; border-radius: 8px;" />
+            <el-descriptions-item label="照片" :span="2">
+              <img v-if="currentOrder.photo" :src="currentOrder.photo" style="max-width: 400px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" />
+              <span v-else style="color: #999;">无照片</span>
             </el-descriptions-item>
           </el-descriptions>
         </div>

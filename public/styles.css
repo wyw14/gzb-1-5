@@ -724,6 +724,79 @@ body {
   transition: width 0.3s;
 }
 
+.photo-upload-area {
+  width: 100%;
+}
+
+.photo-upload-trigger {
+  width: 200px;
+  height: 160px;
+  border: 2px dashed #c8e6c9;
+  border-radius: 12px;
+  overflow: hidden;
+  cursor: pointer;
+  transition: all 0.3s;
+  background: #f9fbf9;
+}
+
+.photo-upload-trigger:hover {
+  border-color: #4caf50;
+  background: #f1f8e9;
+}
+
+.photo-upload-error {
+  border-color: #f44336;
+  background: #fff8f8;
+}
+
+.photo-upload-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 12px;
+}
+
+.photo-upload-preview {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.photo-upload-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.photo-upload-preview-mask {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.photo-upload-preview:hover .photo-upload-preview-mask {
+  opacity: 1;
+}
+
+.photo-error-tip {
+  color: #f44336;
+  font-size: 12px;
+  margin-top: 6px;
+  line-height: 1;
+}
+
 .risk-preview {
   background: linear-gradient(135deg, #fff8e1 0%, #fff3e0 100%);
   border: 1px solid #ffe0b2;

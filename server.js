@@ -362,6 +362,9 @@ app.post('/api/inspections', upload.single('photo'), (req, res) => {
   if (!symptoms || !plantId) {
     return res.status(400).json({ error: '症状和植物号为必填项' });
   }
+  if (!req.file) {
+    return res.status(400).json({ error: '照片为必填项，请上传巡检照片' });
+  }
   const plants = readJSON('plants.json');
   const plant = plants.find(p => p.id === plantId);
   if (!plant) {
@@ -380,7 +383,7 @@ app.post('/api/inspections', upload.single('photo'), (req, res) => {
     severity,
     riskScore: score,
     matchedKeywords,
-    photo: req.file ? `/uploads/${req.file.filename}` : '',
+    photo: `/uploads/${req.file.filename}`,
     status: 'pending',
     createdAt: now,
     updatedAt: now,
