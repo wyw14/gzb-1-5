@@ -724,6 +724,104 @@ body {
   transition: width 0.3s;
 }
 
+.risk-preview {
+  background: linear-gradient(135deg, #fff8e1 0%, #fff3e0 100%);
+  border: 1px solid #ffe0b2;
+  border-radius: 12px;
+  padding: 20px;
+  margin-top: 16px;
+}
+
+.risk-preview-header {
+  font-size: 16px;
+  font-weight: bold;
+  color: #e65100;
+  margin-bottom: 12px;
+}
+
+.risk-preview-body {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.risk-preview-score {
+  font-size: 36px;
+  font-weight: bold;
+}
+
+.risk-preview-matched {
+  width: 100%;
+  margin-top: 8px;
+}
+
+.tracking-timeline {
+  padding: 12px 0;
+}
+
+.tracking-item {
+  display: flex;
+  position: relative;
+  padding-bottom: 24px;
+  padding-left: 32px;
+}
+
+.tracking-item::before {
+  content: '';
+  position: absolute;
+  left: 7px;
+  top: 20px;
+  bottom: 0;
+  width: 2px;
+  background: #a5d6a7;
+}
+
+.tracking-item:last-child::before {
+  display: none;
+}
+
+.tracking-dot {
+  position: absolute;
+  left: 0;
+  top: 6px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #c8e6c9;
+  border: 3px solid #4caf50;
+}
+
+.tracking-dot-active {
+  background: #4caf50;
+  box-shadow: 0 0 0 4px rgba(76, 175, 80, 0.2);
+}
+
+.tracking-content-box {
+  flex: 1;
+  background: #f5f5f5;
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.tracking-action {
+  font-weight: bold;
+  color: #333;
+  font-size: 14px;
+}
+
+.tracking-note {
+  color: #666;
+  font-size: 13px;
+  margin-top: 4px;
+}
+
+.tracking-time {
+  color: #999;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
 @media (max-width: 768px) {
   .sidebar {
     width: 60px;

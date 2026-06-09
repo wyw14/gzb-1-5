@@ -288,6 +288,38 @@ app.delete('/api/photos/:id', (req, res) => {
   res.json({ message: '删除成功' });
 });
 
+const riskKeywords = [
+  { keywords: ['枯萎', '死亡', '倒伏', '发臭', '烂根', '根腐'], score: 30 },
+  { keywords: ['腐烂', '软腐', '黑根', '萎蔫'], score: 25 },
+  { keywords: ['蚜虫', '红蜘蛛', '介壳虫', '蓟马', '线虫'], score: 20 },
+  { keywords: ['黑斑', '褐斑', '白粉', '灰霉', '炭疽', '叶斑'], score: 20 },
+  { keywords: ['黄叶', '卷曲', '掉叶', '畸形'], score: 15 },
+  { keywords: ['白斑', '蛛网', '蜜露', '蜡质', '银灰色'], score: 15 },
+  { keywords: ['失绿', '小黑点', '粉状'], score: 10 }
+];
+
+const calculateRiskScore = (symptoms) => {
+  if (!symptoms) return 0;
+  let totalScore = 0;
+  const matchedKeywords = [];
+  riskKeywords.forEach(group => {
+    group.keywords.forEach(kw => {
+      if (symptoms.includes(kw)) {
+        totalScore += group.score;
+        matchedKeywords.push(kw);
+      }
+    });
+  });
+  return { score: Math.min(totalScore, 100), matchedKeywords };
+};
+
+const severityFromRiskScore = (score) => {
+  if (score >= 70) return 'critical';
+  if (score >= 40) return 'major';
+  if (score >= 15) return 'minor';
+  return 'low';
+};
+
 app.get('/api/pests', (req, res) => {
   const { keyword } = req.query;
   if (!keyword) {
@@ -310,6 +342,114 @@ app.get('/api/pests/:id', (req, res) => {
     return res.status(404).json({ error: '病虫害不存在' });
   }
   res.json(pest);
+});
+
+app.get('/api/inspections', (req, res) => {
+  const { status, plantId } = req.query;
+  let orders = readJSON('inspection-orders.json');
+  if (status) {
+    orders = orders.filter(o => o.status === status);
+  }
+  if (plantId) {
+    orders = orders.filter(o => o.plantId === plantId);
+  }
+  orders.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json(orders);
+});
+
+app.post('/api/inspections', upload.single('photo'), (req, res) => {
+  const { symptoms, plantId, handler } = req.body;
+  if (!symptoms || !plantId) {
+    return res.status(400).json({ error: '症状和植物号为必填项' });
+  }
+  const plants = readJSON('plants.json');
+  const plant = plants.find(p => p.id === plantId);
+  if (!plant) {
+    return res.status(404).json({ error: '植物不存在' });
+  }
+  const { score, matchedKeywords } = calculateRiskScore(symptoms);
+  const severity = severityFromRiskScore(score);
+  const orders = readJSON('inspection-orders.json');
+  const now = new Date().toISOString();
+  const newOrder = {
+    id: generateId(),
+    symptoms,
+    plantId,
+    plantName: plant.name,
+    handler: handler || '',
+    severity,
+    riskScore: score,
+    matchedKeywords,
+    photo: req.file ? `/uploads/${req.file.filename}` : '',
+    status: 'pending',
+    createdAt: now,
+    updatedAt: now,
+    trackingLog: [{ action: '创建工单', time: now, note: `风险分: ${score}, 严重度: ${severity}` }]
+  };
+  orders.push(newOrder);
+  writeJSON('inspection-orders.json', orders);
+  res.json(newOrder);
+});
+
+app.put('/api/inspections/:id', (req, res) => {
+  const orders = readJSON('inspection-orders.json');
+  const index = orders.findIndex(o => o.id === req.params.id);
+  if (index === -1) {
+    return res.status(404).json({ error: '工单不存在' });
+  }
+  const { action, note, handler, status, symptoms } = req.body;
+  const now = new Date().toISOString();
+  if (handler !== undefined) orders[index].handler = handler;
+  if (status) orders[index].status = status;
+  if (symptoms) {
+    orders[index].symptoms = symptoms;
+    const { score, matchedKeywords } = calculateRiskScore(symptoms);
+    orders[index].riskScore = score;
+    orders[index].matchedKeywords = matchedKeywords;
+    orders[index].severity = severityFromRiskScore(score);
+  }
+  if (action) {
+    orders[index].trackingLog = orders[index].trackingLog || [];
+    orders[index].trackingLog.push({ action, time: now, note: note || '' });
+  }
+  orders[index].updatedAt = now;
+  writeJSON('inspection-orders.json', orders);
+  res.json(orders[index]);
+});
+
+app.put('/api/inspections/:id/accept', (req, res) => {
+  const orders = readJSON('inspection-orders.json');
+  const index = orders.findIndex(o => o.id === req.params.id);
+  if (index === -1) {
+    return res.status(404).json({ error: '工单不存在' });
+  }
+  const now = new Date().toISOString();
+  orders[index].status = 'accepted';
+  orders[index].trackingLog = orders[index].trackingLog || [];
+  orders[index].trackingLog.push({ action: '已接单', time: now, note: `处理人: ${orders[index].handler}` });
+  orders[index].updatedAt = now;
+  writeJSON('inspection-orders.json', orders);
+  res.json(orders[index]);
+});
+
+app.put('/api/inspections/:id/verify', (req, res) => {
+  const orders = readJSON('inspection-orders.json');
+  const index = orders.findIndex(o => o.id === req.params.id);
+  if (index === -1) {
+    return res.status(404).json({ error: '工单不存在' });
+  }
+  const { result } = req.body;
+  const now = new Date().toISOString();
+  orders[index].status = result === 'reject' ? 'rejected' : 'verified';
+  orders[index].trackingLog = orders[index].trackingLog || [];
+  orders[index].trackingLog.push({
+    action: result === 'reject' ? '验收不通过' : '验收通过',
+    time: now,
+    note: req.body.note || ''
+  });
+  orders[index].updatedAt = now;
+  writeJSON('inspection-orders.json', orders);
+  res.json(orders[index]);
 });
 
 app.get('/api/statistics', (req, res) => {

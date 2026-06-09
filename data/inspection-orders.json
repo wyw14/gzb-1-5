@@ -1,0 +1,58 @@
+[
+  {
+    "id": "mq5yz9mr7i3qj3q1d6",
+    "symptoms": "??????????",
+    "plantId": "mpz5qmdor67s2wgk4nk",
+    "plantName": "??",
+    "handler": "??",
+    "severity": "low",
+    "riskScore": 0,
+    "matchedKeywords": [],
+    "photo": "",
+    "status": "pending",
+    "createdAt": "2026-06-09T01:37:14.115Z",
+    "updatedAt": "2026-06-09T01:37:14.115Z",
+    "trackingLog": [
+      {
+        "action": "创建工单",
+        "time": "2026-06-09T01:37:14.115Z",
+        "note": "风险分: 0, 严重度: low"
+      }
+    ]
+  },
+  {
+    "id": "mq5yztdfvuakv6de3m9",
+    "symptoms": "黄叶、黑斑、卷曲",
+    "plantId": "mpz5qmdor67s2wgk4nk",
+    "plantName": "??",
+    "handler": "李四",
+    "severity": "major",
+    "riskScore": 50,
+    "matchedKeywords": [
+      "黑斑",
+      "黄叶",
+      "卷曲"
+    ],
+    "photo": "",
+    "status": "verified",
+    "createdAt": "2026-06-09T01:37:39.699Z",
+    "updatedAt": "2026-06-09T01:38:10.259Z",
+    "trackingLog": [
+      {
+        "action": "创建工单",
+        "time": "2026-06-09T01:37:39.699Z",
+        "note": "风险分: 50, 严重度: major"
+      },
+      {
+        "action": "已接单",
+        "time": "2026-06-09T01:37:55.484Z",
+        "note": "处理人: 李四"
+      },
+      {
+        "action": "验收通过",
+        "time": "2026-06-09T01:38:10.259Z",
+        "note": ""
+      }
+    ]
+  }
+]

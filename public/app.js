@@ -52,6 +52,40 @@ const api = {
     const res = await fetch(`${API_BASE}/api/photos/${id}`, { method: 'DELETE' });
     return res.json();
   },
+  async getInspections(status, plantId) {
+    let url = `${API_BASE}/api/inspections?`;
+    if (status) url += `status=${status}&`;
+    if (plantId) url += `plantId=${plantId}&`;
+    const res = await fetch(url);
+    return res.json();
+  },
+  async createInspection(formData) {
+    const res = await fetch(`${API_BASE}/api/inspections`, {
+      method: 'POST',
+      body: formData
+    });
+    return res.json();
+  },
+  async updateInspection(id, data) {
+    const res = await fetch(`${API_BASE}/api/inspections/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
+  async acceptInspection(id) {
+    const res = await fetch(`${API_BASE}/api/inspections/${id}/accept`, { method: 'PUT' });
+    return res.json();
+  },
+  async verifyInspection(id, data) {
+    const res = await fetch(`${API_BASE}/api/inspections/${id}/verify`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    return res.json();
+  },
   async searchPests(keyword) {
     const url = keyword ? `${API_BASE}/api/pests?keyword=${encodeURIComponent(keyword)}` : `${API_BASE}/api/pests`;
     const res = await fetch(url);
@@ -250,9 +284,9 @@ const App = {
             </a>
           </li>
           <li>
-            <a @click="navigate('pests')" :class="{ active: currentRoute === 'pests' }">
-              <el-icon><Warning /></el-icon>
-              <span>病虫害识别</span>
+            <a @click="navigate('inspection')" :class="{ active: currentRoute === 'inspection' }">
+              <el-icon><FirstAidKit /></el-icon>
+              <span>巡检问诊</span>
             </a>
           </li>
           <li>
@@ -274,7 +308,7 @@ const App = {
         <plant-management v-else-if="currentRoute === 'plants'" @refresh-notifications="loadNotifications" />
         <notification-page v-else-if="currentRoute === 'notifications'" :notifications="notifications" @refresh="loadNotifications" />
         <photo-timeline v-else-if="currentRoute === 'photos'" />
-        <pest-detection v-else-if="currentRoute === 'pests'" />
+        <inspection-diagnosis v-else-if="currentRoute === 'inspection'" />
         <yearly-report v-else-if="currentRoute === 'report'" />
       </main>
     </div>
@@ -1290,157 +1324,405 @@ const PhotoTimeline = {
   `
 };
 
-const PestDetection = {
+const InspectionDiagnosis = {
   setup() {
-    const searchKeyword = ref('');
-    const pests = ref([]);
+    const orders = ref([]);
+    const plants = ref([]);
     const loading = ref(false);
-    const selectedPest = ref(null);
+    const createVisible = ref(false);
     const detailVisible = ref(false);
+    const trackVisible = ref(false);
+    const currentOrder = ref(null);
+    const filterStatus = ref('');
+    const symptomInput = ref('');
+    const matchedPests = ref([]);
+    const pestsLoading = ref(false);
 
-    const loadPests = async () => {
+    const formData = reactive({
+      symptoms: '',
+      plantId: '',
+      handler: '',
+      photo: null
+    });
+
+    const rules = {
+      symptoms: [{ required: true, message: '请输入症状描述', trigger: 'blur' }],
+      plantId: [{ required: true, message: '请选择植物', trigger: 'change' }],
+      handler: [{ required: true, message: '请输入处理人', trigger: 'blur' }]
+    };
+
+    const severityMap = {
+      critical: { label: '紧急', color: '#f44336', bg: '#ffebee' },
+      major: { label: '严重', color: '#ff9800', bg: '#fff3e0' },
+      minor: { label: '一般', color: '#2196f3', bg: '#e3f2fd' },
+      low: { label: '轻微', color: '#4caf50', bg: '#e8f5e9' }
+    };
+
+    const statusMap = {
+      pending: { label: '待处理', color: '#ff9800', bg: '#fff3e0' },
+      accepted: { label: '处理中', color: '#2196f3', bg: '#e3f2fd' },
+      verified: { label: '已验收', color: '#4caf50', bg: '#e8f5e9' },
+      rejected: { label: '验收不通过', color: '#f44336', bg: '#ffebee' }
+    };
+
+    const loadOrders = async () => {
       try {
         loading.value = true;
-        pests.value = await api.searchPests(searchKeyword.value);
+        orders.value = await api.getInspections(filterStatus.value);
       } catch (e) {
-        ElMessage.error('加载病虫害数据失败');
+        ElMessage.error('加载工单列表失败');
       } finally {
         loading.value = false;
       }
     };
 
-    const openDetail = (pest) => {
-      selectedPest.value = pest;
+    const loadPlants = async () => {
+      try {
+        plants.value = await api.getPlants();
+      } catch (e) {
+        ElMessage.error('加载植物列表失败');
+      }
+    };
+
+    const searchPestsBySymptom = async () => {
+      if (!formData.symptoms || formData.symptoms.trim().length < 2) {
+        matchedPests.value = [];
+        return;
+      }
+      try {
+        pestsLoading.value = true;
+        const firstKw = formData.symptoms.split(/[，,、\s]+/)[0];
+        matchedPests.value = await api.searchPests(firstKw);
+      } catch (e) {
+        matchedPests.value = [];
+      } finally {
+        pestsLoading.value = false;
+      }
+    };
+
+    const previewRisk = computed(() => {
+      if (!formData.symptoms) return { score: 0, severity: 'low', matched: [] };
+      const kw = formData.symptoms;
+      const riskMap = [
+        { keywords: ['枯萎', '死亡', '倒伏', '发臭', '烂根', '根腐'], score: 30 },
+        { keywords: ['腐烂', '软腐', '黑根', '萎蔫'], score: 25 },
+        { keywords: ['蚜虫', '红蜘蛛', '介壳虫', '蓟马', '线虫'], score: 20 },
+        { keywords: ['黑斑', '褐斑', '白粉', '灰霉', '炭疽', '叶斑'], score: 20 },
+        { keywords: ['黄叶', '卷曲', '掉叶', '畸形'], score: 15 },
+        { keywords: ['白斑', '蛛网', '蜜露', '蜡质', '银灰色'], score: 15 },
+        { keywords: ['失绿', '小黑点', '粉状'], score: 10 }
+      ];
+      let total = 0;
+      const matched = [];
+      riskMap.forEach(group => {
+        group.keywords.forEach(k => {
+          if (kw.includes(k)) {
+            total += group.score;
+            matched.push(k);
+          }
+        });
+      });
+      const score = Math.min(total, 100);
+      let severity = 'low';
+      if (score >= 70) severity = 'critical';
+      else if (score >= 40) severity = 'major';
+      else if (score >= 15) severity = 'minor';
+      return { score, severity, matched };
+    });
+
+    const handleSubmit = async (formRef) => {
+      if (!formRef) return;
+      await formRef.validate(async (valid) => {
+        if (valid) {
+          try {
+            const fd = new FormData();
+            fd.append('symptoms', formData.symptoms);
+            fd.append('plantId', formData.plantId);
+            fd.append('handler', formData.handler);
+            if (formData.photo) fd.append('photo', formData.photo);
+            const result = await api.createInspection(fd);
+            ElMessage.success(`工单创建成功！风险分: ${result.riskScore}`);
+            createVisible.value = false;
+            resetForm();
+            loadOrders();
+          } catch (e) {
+            ElMessage.error('创建工单失败');
+          }
+        }
+      });
+    };
+
+    const resetForm = () => {
+      formData.symptoms = '';
+      formData.plantId = '';
+      formData.handler = '';
+      formData.photo = null;
+      matchedPests.value = [];
+    };
+
+    const openCreateDialog = () => {
+      resetForm();
+      createVisible.value = true;
+    };
+
+    const openDetail = (order) => {
+      currentOrder.value = order;
       detailVisible.value = true;
     };
 
-    const highlightKeyword = (text) => {
-      if (!searchKeyword.value) return text;
-      const regex = new RegExp(`(${searchKeyword.value})`, 'gi');
-      return text.replace(regex, '<span class="search-highlight">$1</span>');
+    const openTrack = (order) => {
+      currentOrder.value = order;
+      trackVisible.value = true;
     };
 
-    const quickSearch = (keyword) => {
-      searchKeyword.value = keyword;
-      loadPests();
+    const handleAccept = async (order) => {
+      try {
+        await api.acceptInspection(order.id);
+        ElMessage.success('已接单处理');
+        loadOrders();
+      } catch (e) {
+        ElMessage.error('操作失败');
+      }
     };
 
-    const commonSymptoms = ['黄叶', '黑斑', '白斑', '卷曲', '腐烂', '蚜虫', '蛛网', '白粉', '根腐', '掉叶'];
+    const handleVerify = async (order, result) => {
+      try {
+        await api.verifyInspection(order.id, { result, note: '' });
+        ElMessage.success(result === 'pass' ? '验收通过' : '验收不通过，工单已退回');
+        detailVisible.value = false;
+        loadOrders();
+      } catch (e) {
+        ElMessage.error('操作失败');
+      }
+    };
 
-    watch(searchKeyword, () => {
-      loadPests();
-    });
+    const handleFileChange = (uploadFileObj) => {
+      formData.photo = uploadFileObj.raw;
+    };
+
+    const getRiskColor = (score) => {
+      if (score >= 70) return '#f44336';
+      if (score >= 40) return '#ff9800';
+      if (score >= 15) return '#2196f3';
+      return '#4caf50';
+    };
+
+    const quickFillSymptom = (symptom) => {
+      if (formData.symptoms) {
+        formData.symptoms += '、' + symptom;
+      } else {
+        formData.symptoms = symptom;
+      }
+    };
+
+    const commonSymptoms = ['黄叶', '黑斑', '白斑', '卷曲', '腐烂', '蚜虫', '蛛网', '白粉', '根腐', '掉叶', '枯萎', '萎蔫', '介壳虫', '灰霉', '炭疽'];
+
+    watch(filterStatus, () => loadOrders());
+    watch(() => formData.symptoms, () => searchPestsBySymptom());
 
     onMounted(() => {
-      loadPests();
+      loadOrders();
+      loadPlants();
     });
 
     return {
-      searchKeyword,
-      pests,
-      loading,
-      selectedPest,
-      detailVisible,
-      commonSymptoms,
-      openDetail,
-      highlightKeyword,
-      quickSearch
+      orders, plants, loading, createVisible, detailVisible, trackVisible,
+      currentOrder, filterStatus, formData, rules, matchedPests, pestsLoading,
+      previewRisk, commonSymptoms, severityMap, statusMap,
+      openCreateDialog, openDetail, openTrack,
+      handleSubmit, handleAccept, handleVerify, handleFileChange,
+      quickFillSymptom, getRiskColor, formatDate, loadOrders
     };
   },
   template: `
     <div>
       <div class="page-header">
-        <h1 class="page-title">🐛 病虫害识别</h1>
+        <h1 class="page-title">🔍 巡检问诊</h1>
+        <div class="page-header-actions">
+          <el-button type="primary" @click="openCreateDialog">
+            <el-icon><Plus /></el-icon> 新建巡检工单
+          </el-button>
+        </div>
       </div>
-
-      <el-alert title="智能匹配说明" type="info" :closable="false" style="margin-bottom: 20px;">
-        <template #default>
-          输入观察到的症状关键词（如：黄叶、黑斑、白粉等），系统将自动匹配可能的病虫害及防治方法。
-        </template>
-      </el-alert>
 
       <div class="filter-bar">
-        <el-input
-          v-model="searchKeyword"
-          placeholder="输入症状关键词，如：黄叶、黑斑、白粉..."
-          clearable
-          style="flex: 1; max-width: 500px;"
-          size="large"
-          :prefix-icon="Search"
-          @keyup.enter="loadPests"
-        />
-        <el-button type="primary" size="large" @click="loadPests">
-          <el-icon><Search /></el-icon> 识别
-        </el-button>
-      </div>
-
-      <div style="margin-bottom: 20px;">
-        <span style="color: #666; margin-right: 12px;">常见症状：</span>
-        <el-tag
-          v-for="symptom in commonSymptoms"
-          :key="symptom"
-          size="large"
-          style="cursor: pointer; margin-right: 8px; margin-bottom: 8px;"
-          @click="quickSearch(symptom)"
-        >
-          {{ symptom }}
-        </el-tag>
+        <el-select v-model="filterStatus" placeholder="按状态筛选" clearable style="width: 160px;">
+          <el-option label="待处理" value="pending" />
+          <el-option label="处理中" value="accepted" />
+          <el-option label="已验收" value="verified" />
+          <el-option label="验收不通过" value="rejected" />
+        </el-select>
+        <span style="color: #666; margin-left: auto;">共 {{ orders.length }} 条工单</span>
       </div>
 
       <div v-loading="loading">
-        <div v-if="pests.length === 0" class="empty-state">
+        <div v-if="orders.length === 0" class="empty-state">
           <div class="empty-state-icon">🔍</div>
-          <div class="empty-state-text">
-            {{ searchKeyword ? '未找到匹配的病虫害，请尝试其他关键词' : '请输入症状关键词进行搜索' }}
-          </div>
+          <div class="empty-state-text">暂无巡检工单，点击上方按钮新建</div>
+          <el-button type="primary" @click="openCreateDialog">新建工单</el-button>
         </div>
-        <el-row v-else :gutter="20">
-          <el-col v-for="pest in pests" :key="pest.id" :xs="24" :sm="12" :md="8" :lg="6" style="margin-bottom: 20px;">
-            <div class="pest-card" @click="openDetail(pest)" style="cursor: pointer;">
-              <div class="pest-card-header">
-                <div>
-                  <div class="pest-card-name" v-html="highlightKeyword(pest.name)"></div>
-                  <div class="pest-card-keywords" style="margin-top: 8px;">
-                    <span v-for="kw in pest.keywords.slice(0, 3)" :key="kw" class="pest-card-keyword" v-html="highlightKeyword(kw)"></span>
-                  </div>
-                </div>
-                <div class="pest-card-icon">🐛</div>
-              </div>
-              <div class="pest-card-section">
-                <div class="pest-card-section-title">⚠️ 症状</div>
-                <div class="pest-card-section-content" v-html="highlightKeyword(pest.symptoms)"></div>
-              </div>
-              <div style="margin-top: auto; padding-top: 12px; text-align: right;">
-                <el-button type="primary" text>查看详情 →</el-button>
-              </div>
-            </div>
-          </el-col>
-        </el-row>
+        <el-table v-else :data="orders" style="width: 100%" border stripe>
+          <el-table-column prop="id" label="工单号" width="130" show-overflow-tooltip />
+          <el-table-column prop="plantName" label="植物号" width="100" />
+          <el-table-column prop="symptoms" label="症状" min-width="180" show-overflow-tooltip />
+          <el-table-column label="风险分" width="100" align="center">
+            <template #default="{ row }">
+              <span class="risk-score" :style="{ color: getRiskColor(row.riskScore), fontWeight: 'bold', fontSize: '16px' }">
+                {{ row.riskScore }}
+              </span>
+            </template>
+          </el-table-column>
+          <el-table-column label="严重度" width="90" align="center">
+            <template #default="{ row }">
+              <el-tag :color="severityMap[row.severity]?.bg" :style="{ color: severityMap[row.severity]?.color, border: 'none' }" size="small">
+                {{ severityMap[row.severity]?.label }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="handler" label="处理人" width="100" />
+          <el-table-column label="状态" width="110" align="center">
+            <template #default="{ row }">
+              <el-tag :color="statusMap[row.status]?.bg" :style="{ color: statusMap[row.status]?.color, border: 'none' }" size="small">
+                {{ statusMap[row.status]?.label }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="创建时间" width="110">
+            <template #default="{ row }">
+              {{ new Date(row.createdAt).toLocaleDateString() }}
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="240" fixed="right">
+            <template #default="{ row }">
+              <el-button size="small" type="primary" text @click="openDetail(row)">详情</el-button>
+              <el-button v-if="row.status === 'pending'" size="small" type="warning" text @click="handleAccept(row)">接单</el-button>
+              <el-button size="small" type="info" text @click="openTrack(row)">追踪</el-button>
+              <el-button v-if="row.status === 'accepted'" size="small" type="success" text @click="handleVerify(row, 'pass')">验收</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
       </div>
 
-      <el-dialog v-model="detailVisible" :title="selectedPest?.name" width="600px">
-        <div v-if="selectedPest">
-          <div class="pest-card-section">
-            <div class="pest-card-section-title">🏷️ 关键词</div>
-            <div class="pest-card-keywords">
-              <span v-for="kw in selectedPest.keywords" :key="kw" class="pest-card-keyword">{{ kw }}</span>
+      <el-dialog v-model="createVisible" title="新建巡检工单" width="750px" :close-on-click-modal="false">
+        <el-form ref="createFormRef" :model="formData" :rules="rules" label-width="90px">
+          <el-form-item label="植物号" prop="plantId">
+            <el-select v-model="formData.plantId" placeholder="选择植物" style="width: 100%;" filterable>
+              <el-option v-for="plant in plants" :key="plant.id" :label="plant.name + ' (' + plant.species + ')'" :value="plant.id" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="症状" prop="symptoms">
+            <el-input v-model="formData.symptoms" type="textarea" :rows="3" placeholder="描述观察到的症状，如：叶片黄化、黑斑、卷曲等" />
+          </el-form-item>
+          <div style="margin-bottom: 18px; padding: 0 0 0 90px;">
+            <span style="color: #666; font-size: 13px; margin-right: 8px;">快捷填入：</span>
+            <el-tag
+              v-for="s in commonSymptoms"
+              :key="s"
+              size="small"
+              style="cursor: pointer; margin: 2px;"
+              @click="quickFillSymptom(s)"
+            >{{ s }}</el-tag>
+          </div>
+          <el-form-item label="照片">
+            <el-upload :auto-upload="false" :show-file-list="false" accept="image/*" @change="handleFileChange">
+              <el-button type="default">选择照片</el-button>
+            </el-upload>
+          </el-form-item>
+          <el-form-item label="处理人" prop="handler">
+            <el-input v-model="formData.handler" placeholder="指定处理人" />
+          </el-form-item>
+
+          <div v-if="previewRisk.score > 0" class="risk-preview">
+            <div class="risk-preview-header">⚡ 实时风险评估</div>
+            <div class="risk-preview-body">
+              <div class="risk-preview-score" :style="{ color: getRiskColor(previewRisk.score) }">
+                {{ previewRisk.score }} 分
+              </div>
+              <div class="risk-preview-severity">
+                <el-tag :color="severityMap[previewRisk.severity]?.bg" :style="{ color: severityMap[previewRisk.severity]?.color, border: 'none' }">
+                  {{ severityMap[previewRisk.severity]?.label }}
+                </el-tag>
+              </div>
+              <div v-if="previewRisk.matched.length" class="risk-preview-matched">
+                <span style="color: #666; font-size: 13px;">命中的关键词：</span>
+                <el-tag v-for="kw in previewRisk.matched" :key="kw" size="small" type="warning" style="margin: 2px;">{{ kw }}</el-tag>
+              </div>
             </div>
           </div>
-          <div class="pest-card-section">
-            <div class="pest-card-section-title">⚠️ 症状表现</div>
-            <div class="pest-card-section-content">{{ selectedPest.symptoms }}</div>
+
+          <div v-if="matchedPests.length > 0" style="margin-top: 16px;">
+            <el-alert title="参考：可能的病虫害" type="warning" :closable="false" style="margin-bottom: 12px;" />
+            <el-collapse>
+              <el-collapse-item v-for="pest in matchedPests.slice(0, 5)" :key="pest.id" :title="pest.name">
+                <div style="font-size: 14px; color: #666; line-height: 1.8;">
+                  <p><strong>症状：</strong>{{ pest.symptoms }}</p>
+                  <p><strong>治疗：</strong>{{ pest.treatment }}</p>
+                  <p><strong>预防：</strong>{{ pest.prevention }}</p>
+                </div>
+              </el-collapse-item>
+            </el-collapse>
           </div>
-          <div class="pest-card-section">
-            <div class="pest-card-section-title">💊 治疗方法</div>
-            <div class="pest-card-section-content">{{ selectedPest.treatment }}</div>
-          </div>
-          <div class="pest-card-section">
-            <div class="pest-card-section-title">🛡️ 预防措施</div>
-            <div class="pest-card-section-content">{{ selectedPest.prevention }}</div>
-          </div>
+        </el-form>
+        <template #footer>
+          <el-button @click="createVisible = false">取消</el-button>
+          <el-button type="primary" @click="handleSubmit($refs.createFormRef)">保存工单</el-button>
+        </template>
+      </el-dialog>
+
+      <el-dialog v-model="detailVisible" :title="'工单详情 - ' + (currentOrder?.id || '')" width="650px">
+        <div v-if="currentOrder">
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="植物号">{{ currentOrder.plantName }}</el-descriptions-item>
+            <el-descriptions-item label="处理人">{{ currentOrder.handler || '-' }}</el-descriptions-item>
+            <el-descriptions-item label="严重度">
+              <el-tag :color="severityMap[currentOrder.severity]?.bg" :style="{ color: severityMap[currentOrder.severity]?.color, border: 'none' }">
+                {{ severityMap[currentOrder.severity]?.label }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="风险分">
+              <span :style="{ color: getRiskColor(currentOrder.riskScore), fontWeight: 'bold' }">{{ currentOrder.riskScore }}</span>
+            </el-descriptions-item>
+            <el-descriptions-item label="状态">
+              <el-tag :color="statusMap[currentOrder.status]?.bg" :style="{ color: statusMap[currentOrder.status]?.color, border: 'none' }">
+                {{ statusMap[currentOrder.status]?.label }}
+              </el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item label="创建时间">{{ new Date(currentOrder.createdAt).toLocaleString() }}</el-descriptions-item>
+            <el-descriptions-item label="症状" :span="2">{{ currentOrder.symptoms }}</el-descriptions-item>
+            <el-descriptions-item v-if="currentOrder.matchedKeywords?.length" label="命中关键词" :span="2">
+              <el-tag v-for="kw in currentOrder.matchedKeywords" :key="kw" size="small" type="warning" style="margin: 2px;">{{ kw }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item v-if="currentOrder.photo" label="照片" :span="2">
+              <img :src="currentOrder.photo" style="max-width: 300px; border-radius: 8px;" />
+            </el-descriptions-item>
+          </el-descriptions>
         </div>
         <template #footer>
+          <el-button v-if="currentOrder?.status === 'pending'" type="warning" @click="handleAccept(currentOrder); detailVisible = false;">接单处理</el-button>
+          <el-button v-if="currentOrder?.status === 'accepted'" type="success" @click="handleVerify(currentOrder, 'pass'); detailVisible = false;">验收通过</el-button>
+          <el-button v-if="currentOrder?.status === 'accepted'" type="danger" @click="handleVerify(currentOrder, 'reject'); detailVisible = false;">验收不通过</el-button>
           <el-button @click="detailVisible = false">关闭</el-button>
+        </template>
+      </el-dialog>
+
+      <el-dialog v-model="trackVisible" :title="'追踪记录 - ' + (currentOrder?.id || '')" width="600px">
+        <div v-if="currentOrder && currentOrder.trackingLog?.length">
+          <div class="tracking-timeline">
+            <div v-for="(log, idx) in currentOrder.trackingLog" :key="idx" class="tracking-item">
+              <div class="tracking-dot" :class="{ 'tracking-dot-active': idx === currentOrder.trackingLog.length - 1 }"></div>
+              <div class="tracking-content-box">
+                <div class="tracking-action">{{ log.action }}</div>
+                <div class="tracking-note" v-if="log.note">{{ log.note }}</div>
+                <div class="tracking-time">{{ new Date(log.time).toLocaleString() }}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="empty-state">
+          <div class="empty-state-text">暂无追踪记录</div>
+        </div>
+        <template #footer>
+          <el-button @click="trackVisible = false">关闭</el-button>
         </template>
       </el-dialog>
     </div>
@@ -1720,7 +2002,7 @@ app.component('dashboard', Dashboard);
 app.component('plant-management', PlantManagement);
 app.component('notification-page', NotificationPage);
 app.component('photo-timeline', PhotoTimeline);
-app.component('pest-detection', PestDetection);
+app.component('inspection-diagnosis', InspectionDiagnosis);
 app.component('yearly-report', YearlyReport);
 
 app.mount('#app');
